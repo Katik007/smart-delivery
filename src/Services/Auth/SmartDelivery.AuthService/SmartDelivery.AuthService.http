@@ -1,0 +1,6 @@
+@SmartDelivery.AuthService_HostAddress = http://localhost:5125
+
+GET {{SmartDelivery.AuthService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Заявки</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #eef2ff; color: #172554; font: 16px system-ui; }
+  main { max-width: 780px; margin: 32px auto; padding: 0 16px; }
+  form, li { background: white; border-radius: 12px; padding: 20px; margin-bottom: 12px; }
+  label { display: block; margin-bottom: 12px; }
+  input, textarea { display: block; width: 100%; margin-top: 4px; padding: 8px; font: inherit; }
+  button { padding: 8px 14px; font: inherit; cursor: pointer; }
+  ul { list-style: none; padding: 0; }
+  li p { white-space: pre-wrap; overflow-wrap: anywhere; }
+  li strong { overflow-wrap: anywhere; }
+</style>
+<main>
+  <h1>Заявки</h1>
+  <form id="request-form">
+    <h2 id="form-heading">Новая заявка</h2>
+    <label>Название<input name="title" required maxlength="120"></label>
+    <label>Описание<textarea name="description" rows="4" maxlength="2000"></textarea></label>
+    <button type="submit">Сохранить</button>
+    <button type="button" id="cancel" hidden>Отменить</button>
+  </form>
+  <p id="status" role="status"></p>
+  <h2>Список заявок</h2>
+  <p id="empty" hidden>Заявок пока нет.</p>
+  <ul id="requests"></ul>
+</main>
+<script type="module">
+  const form = document.querySelector('#request-form');
+  const heading = document.querySelector('#form-heading');
+  const cancel = document.querySelector('#cancel');
+  const save = form.querySelector('[type=submit]');
+  const status = document.querySelector('#status');
+  const list = document.querySelector('#requests');
+  const empty = document.querySelector('#empty');
+  let editingId = null;
+
+  function reset() {
+    editingId = null;
+    form.reset();
+    heading.textContent = 'Новая заявка';
+    cancel.hidden = true;
+  }
+
+  async function load() {
+    const response = await fetch('/api/requests');
+    if (!response.ok) throw new Error('Не удалось загрузить заявки.');
+    const requests = await response.json();
+    empty.hidden = requests.length !== 0;
+    list.replaceChildren(...requests.map(request => {
+      const item = document.createElement('li');
+      const title = document.createElement('strong');
+      const description = document.createElement('p');
+      const edit = document.createElement('button');
+      title.textContent = '#' + request.id + ' · ' + request.title;
+      description.textContent = request.description;
+      edit.textContent = 'Редактировать';
+      edit.onclick = () => {
+        if (save.disabled) return;
+        editingId = request.id;
+        form.elements.title.value = request.title;
+        form.elements.description.value = request.description;
+        heading.textContent = 'Редактирование заявки #' + request.id;
+        cancel.hidden = false;
+        status.textContent = '';
+        form.elements.title.focus();
+      };
+      item.append(title, description, edit);
+      return item;
+    }));
+  }
+
+  cancel.onclick = reset;
+  form.onsubmit = async event => {
+    event.preventDefault();
+    save.disabled = true;
+    cancel.disabled = true;
+    status.textContent = '';
+    try {
+      const response = await fetch(editingId === null ? '/api/requests' : '/api/requests/' + editingId, {
+        method: editingId === null ? 'POST' : 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.fromEntries(new FormData(form)))
+      });
+      if (response.status === 400) throw new Error((await response.json()).message || 'Проверьте поля формы.');
+      if (response.status === 404) throw new Error('Заявка не найдена.');
+      if (!response.ok) throw new Error('Не удалось сохранить заявку.');
+      reset();
+      status.textContent = 'Заявка сохранена.';
+      await load();
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      save.disabled = false;
+      cancel.disabled = false;
+    }
+  };
+  load().catch(error => { status.textContent = error.message; });
+</script>
+</html>

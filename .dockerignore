@@ -1,0 +1,10 @@
+**/.git
+**/.vs
+**/bin
+**/obj
+**/.env
+**/.postgres-password
+**/*.key
+**/*.md
+**/TestResults
+**/simple-project-main

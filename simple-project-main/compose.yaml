@@ -1,0 +1,38 @@
+services:
+  app:
+    image: ${APP_IMAGE:?Set APP_IMAGE to the application image and tag}
+    restart: unless-stopped
+    networks:
+      default:
+      proxy:
+        aliases:
+          - ${PROXY_APP_ALIAS:-simple-project}
+    environment:
+      Database__Host: db
+      Database__Password: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: requests
+      POSTGRES_USER: requests
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "requests", "-d", "requests"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:
+
+networks:
+  proxy:
+    external: true
+    name: nginx-proxy

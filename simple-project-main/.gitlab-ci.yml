@@ -1,0 +1,88 @@
+# Без tags: раннер должен принимать задачи без тегов (Run untagged jobs).
+# Для раннера с тегом добавьте в нужную задачу: tags: [имя-тега].
+stages:
+  - build
+  - deploy
+
+# Docker executor: privileged = true, volumes = ["/certs/client", "/cache"].
+docker-build:
+  stage: build
+  image: docker:27.4.1-cli
+  timeout: 15 minutes
+  services:
+    - name: docker:27.4.1-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" --username "$CI_REGISTRY_USER" --password-stdin
+  script:
+    - docker build --pull -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" .
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" "$CI_REGISTRY_IMAGE:latest"
+        docker push "$CI_REGISTRY_IMAGE:latest"
+      fi
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+
+deploy-production:
+  stage: deploy
+  image: alpine:3.22
+  timeout: 10 minutes
+  resource_group: production
+  variables:
+    SSH_HOST: "136.234.238.30"
+    SSH_USER: "root"
+    DEPLOY_DIR: "/home/vlasovandrey"
+  environment:
+    name: production
+  before_script:
+    - apk add --no-cache openssh-client
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - cp "$SSH_PRIVATE_KEY" ~/.ssh/id_deploy
+    - chmod 600 ~/.ssh/id_deploy
+  script:
+    - |
+      case "$DEPLOY_DIR" in
+        /home/*) ;;
+        *) echo "DEPLOY_DIR must be /home/name" >&2; exit 1 ;;
+      esac
+      deploy_name=${DEPLOY_DIR#/home/}
+      case "$deploy_name" in
+        ''|[!a-z0-9]*|*[!a-z0-9_-]*) echo "Use a lowercase folder name: /home/name" >&2; exit 1 ;;
+      esac
+      ssh -i ~/.ssh/id_deploy \
+        -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$SSH_USER@$SSH_HOST" \
+        "mkdir -p '$DEPLOY_DIR'"
+      scp -i ~/.ssh/id_deploy \
+        -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        compose.yaml "$SSH_USER@$SSH_HOST:$DEPLOY_DIR/compose.yaml"
+    - |
+      printf '%s\n' "$CI_REGISTRY_PASSWORD" | ssh -i ~/.ssh/id_deploy \
+        -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$SSH_USER@$SSH_HOST" \
+        "set -eu
+         cd '$DEPLOY_DIR'
+         docker compose version
+         export DOCKER_CONFIG=\$(mktemp -d)
+         trap 'rm -rf \"\$DOCKER_CONFIG\"' EXIT
+         docker login '$CI_REGISTRY' --username '$CI_REGISTRY_USER' --password-stdin
+         umask 077
+         if [ ! -s .postgres-password ]; then
+           od -An -N32 -tx1 /dev/urandom | tr -d '[:space:]' > .postgres-password
+         fi
+         db_password=\$(cat .postgres-password)
+         test \"\${#db_password}\" -eq 64
+         printf 'APP_IMAGE=%s\nPOSTGRES_PASSWORD=%s\nPROXY_APP_ALIAS=%s\n' '$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA' \"\$db_password\" '$deploy_name' > .env
+         docker compose config --quiet
+         docker network inspect nginx-proxy >/dev/null 2>&1 || docker network create nginx-proxy
+         docker compose pull
+         docker compose up -d --wait --wait-timeout 60
+         docker compose ps"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

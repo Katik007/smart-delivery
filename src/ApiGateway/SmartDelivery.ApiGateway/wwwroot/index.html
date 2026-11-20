@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartDelivery — Практическая работа (Кабанова Екатерина)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --surface-hover: #334155;
+            --primary: #38bdf8;
+            --primary-glow: rgba(56, 189, 248, 0.2);
+            --success: #10b981;
+            --success-bg: rgba(16, 185, 129, 0.15);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 30px;
+            border-bottom: 1px solid var(--border);
+        }
+        .badge {
+            display: inline-block;
+            background: var(--primary-glow);
+            color: var(--primary);
+            padding: 6px 16px;
+            border-radius: 9999px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 1.15rem;
+        }
+        .student-info {
+            margin-top: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            font-size: 0.95rem;
+            color: #cbd5e1;
+        }
+        .student-info span strong {
+            color: var(--primary);
+        }
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+        .card h2 {
+            font-size: 1.3rem;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--primary);
+        }
+        .service-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .service-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .service-item a {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .service-item a:hover {
+            text-decoration: underline;
+        }
+        .tag-ok {
+            background: var(--success-bg);
+            color: var(--success);
+            padding: 3px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .points-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            font-size: 0.92rem;
+        }
+        .points-table th, .points-table td {
+            padding: 12px 14px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        .points-table th {
+            color: var(--text-muted);
+            font-weight: 600;
+            background: rgba(15, 23, 42, 0.4);
+        }
+        .points-table tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+        .num-circle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: var(--primary-glow);
+            color: var(--primary);
+            font-weight: 700;
+            font-size: 0.8rem;
+        }
+        .status-check {
+            color: var(--success);
+            font-weight: bold;
+        }
+        footer {
+            margin-top: 50px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            border-top: 1px solid var(--border);
+            padding-top: 25px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="badge">Практическое задание на автомат (14 из 14 пунктов)</div>
+            <h1>SmartDelivery Microservices</h1>
+            <p class="subtitle">Интеллектуальная распределенная система доставки и логистики товаров</p>
+            <div class="student-info">
+                <span>Студент: <strong>Кабанова Екатерина</strong></span>
+                <span>Домен: <strong>kabanovae.9593647-gu32875.twc1.net</strong></span>
+                <span>Сервер: <strong>136.234.238.30</strong></span>
+            </div>
+        </header>
+
+        <div class="grid-2">
+            <div class="card">
+                <h2>🌐 Микросервисы API (Reverse Proxy)</h2>
+                <ul class="service-list">
+                    <li class="service-item">
+                        <div>
+                            <strong>AuthService</strong>
+                            <div style="font-size: 0.82rem; color: var(--text-muted);">JWT авторизация, пользователи, Refresh-токены</div>
+                        </div>
+                        <a href="/api/auth/health" target="_blank">Health</a>
+                    </li>
+                    <li class="service-item">
+                        <div>
+                            <strong>CatalogService</strong>
+                            <div style="font-size: 0.82rem; color: var(--text-muted);">Каталог, складские остатки, Redis кеш, gRPC</div>
+                        </div>
+                        <a href="/api/catalog/health" target="_blank">Health</a>
+                    </li>
+                    <li class="service-item">
+                        <div>
+                            <strong>OrderService</strong>
+                            <div style="font-size: 0.82rem; color: var(--text-muted);">Оформление заказа, Сага, Transactional Outbox</div>
+                        </div>
+                        <a href="/api/orders/health" target="_blank">Health</a>
+                    </li>
+                    <li class="service-item">
+                        <div>
+                            <strong>DeliveryService</strong>
+                            <div style="font-size: 0.82rem; color: var(--text-muted);">Курьеры, маршруты, RabbitMQ Consumer, Inbox</div>
+                        </div>
+                        <a href="/api/delivery/health" target="_blank">Health</a>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h2>⚙️ Инфраструктура и стек</h2>
+                <ul class="service-list">
+                    <li class="service-item">
+                        <span>Архитектура</span>
+                        <span class="tag-ok">Clean Architecture / DDD</span>
+                    </li>
+                    <li class="service-item">
+                        <span>Платформа</span>
+                        <span class="tag-ok">.NET 8 / C# / ASP.NET Core</span>
+                    </li>
+                    <li class="service-item">
+                        <span>База данных</span>
+                        <span class="tag-ok">PostgreSQL 17 (EF Core Npgsql)</span>
+                    </li>
+                    <li class="service-item">
+                        <span>Кеширование</span>
+                        <span class="tag-ok">Redis (Distributed Cache)</span>
+                    </li>
+                    <li class="service-item">
+                        <span>Очередь сообщений</span>
+                        <span class="tag-ok">RabbitMQ (Topic Exchange)</span>
+                    </li>
+                    <li class="service-item">
+                        <span>RPC взаимодействие</span>
+                        <span class="tag-ok">gRPC (stock.proto)</span>
+                    </li>
+                    <li class="service-item">
+                        <span>Транзакции и паттерны</span>
+                        <span class="tag-ok">Saga Orchestrator + Outbox/Inbox</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📋 Выполнение 14 пунктов требований преподавателя</h2>
+            <table class="points-table">
+                <thead>
+                    <tr>
+                        <th style="width: 45px;">№</th>
+                        <th>Требование задания</th>
+                        <th>Реализация в SmartDelivery</th>
+                        <th style="width: 100px;">Статус</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="num-circle">1</span></td>
+                        <td>Выбор предметной области (10-15 агрегатов)</td>
+                        <td>SmartDelivery (доставка товаров): выделено 4 контекста и 15 агрегатов</td>
+                        <td><span class="status-check">✔ Выполнено</span></td>
+                    </tr>
+                    <tr>
+                        <td><span class="num-circle">2</span></td>
+                        <td>DDD описание объектов и ограниченных контекстов</td>
+                        <td>Auth, Catalog, Order, Delivery контексты с агрегатами и Value Objects</td>
+                        <td><span class="status-check">✔ Выполнено</span></td>
+                    </tr>
+                    <tr>
+                        <td><span class="num-circle">3</span></td>
+                        <td>Микросервисы с REST API по чистой архитектуре</td>
+                        <td>Разделение на Domain, Application, Infrastructure, Controllers</td>
+                        <td><span class="status-check">✔ Выполнено</span></td>
+                    </tr>
+                    <tr>
+                        <td><span class="num-circle">4</span></td>
+                        <td>Docker контейнеры и docker compose</td>
+                        <td>Multi-stage Dockerfile для сервисов + единый compose.yaml</td>
+                        <td><span class="status-check">✔ Выполнено</span></td>
+                    </tr>
+                    <tr>
+                        <td><span class="num-circle">5</span></td>
+                        <td>Кеширование данных в Redis</td>
+                        <td>CatalogService: кеш категорий и товаров через IDistributedCache</td>
+                        <td><span class="status-check">✔ Выполнено</span></td>
+                    </tr>
+                    <tr>
+                        <td><span class="num-circle">6</span></td>
+                        <td>Подключение и работа с PostgreSQL</td>
+                        <td>EF Core Npgsql, изолированные БД для каждого сервиса</td>
+                        <td><span class="status-check">✔ Выполнено</span></td>
+                    </tr>
+                    <tr>
+                        <td><span class="num-circle">7</span></td>
+                        <td>Распределенная транзакция (оркестрация)</td>
+                        <td>OrderSagaOrchestrator: резерв в каталоге, платеж, компенсация</td>
+                        <td><span class="status-check">✔ Выполнено</span></td>
+                    </tr>
+                    <tr>
+                        <td><span class="num-circle">8</span></td>
+                        <td>Transaction Outbox и Transaction Inbox</td>
+                        <td>Атомарный Outbox в OrderService + идемпотентный Inbox в DeliveryService</td>
+                        <td><span class="status-check">✔ Выполнено</span></td>
+                    </tr>
+                    <tr>
+                        <td><span class="num-circle">9</span></td>
+                        <td>Подключение шины данных (RabbitMQ)</td>
+                        <td>RabbitMQ: обменник smartdelivery.exchange, очередь событий</td>
+                        <td><span class="status-check">✔ Выполнено</span></td>
+                    </tr>
+                    <tr>
+                        <td><span class="num-circle">10</span></td>
+                        <td>gRPC для синхронных вызовов</td>
+                        <td>stock.proto: CheckAndReserveStock и ReleaseStock между Order и Catalog</td>
+                        <td><span class="status-check">✔ Выполнено</span></td>
+                    </tr>
+                    <tr>
+                        <td><span class="num-circle">11</span></td>
+                        <td>Единый сервис авторизации с JWT</td>
+                        <td>AuthService: регистрация, логин, роли Customer/Courier/Admin, JWT Bearer</td>
+                        <td><span class="status-check">✔ Выполнено</span></td>
+                    </tr>
+                    <tr>
+                        <td><span class="num-circle">12</span></td>
+                        <td>Покрытие юнит и интеграционными тестами</td>
+                        <td>Тесты Саги, компенсации, агрегатов, JWT и WebApplicationFactory</td>
+                        <td><span class="status-check">✔ Выполнено</span></td>
+                    </tr>
+                    <tr>
+                        <td><span class="num-circle">13</span></td>
+                        <td>Пайплайн в GitLab CI для тестов</td>
+                        <td>.gitlab-ci.yml: стадии test, build, deploy с запуском dotnet test</td>
+                        <td><span class="status-check">✔ Выполнено</span></td>
+                    </tr>
+                    <tr>
+                        <td><span class="num-circle">14</span></td>
+                        <td>Сборка и деплой на сервер преподавателя</td>
+                        <td>SSH-деплой в /home/kabanovae, интеграция с nginx-proxy и доменом</td>
+                        <td><span class="status-check">✔ Выполнено</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <footer>
+            <p>SmartDelivery Distributed System &copy; 2026. Разработка WEB-приложений.</p>
+        </footer>
+    </div>
+</body>
+</html>
