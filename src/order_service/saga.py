@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple
 from datetime import datetime
 
 from src.order_service.models import Order, OrderItem, Payment, OrderSagaState, OutboxMessage
+from src.order_service.repository import OrderRepository
 from src.common.domain import OrderStatus, SagaStepStatus, OrderPaidIntegrationEvent
 from src.common.grpc_stubs import stock_pb2, stock_pb2_grpc
 
@@ -15,6 +16,7 @@ class OrderSagaOrchestrator:
         self.payments_db = payments_db
         self.saga_db = saga_db
         self.outbox_db = outbox_db
+        self.order_repo = OrderRepository(orders_db, outbox_db)
         self.grpc_target = grpc_target
         self._grpc_channel = None
         self._stock_client = None
@@ -86,7 +88,7 @@ class OrderSagaOrchestrator:
         order.status = OrderStatus.PAID
         saga_state.current_step = SagaStepStatus.PAID
 
-        # Step 3: Transaction Outbox Pattern
+        # Step 3: Transaction Outbox Pattern (бизнес-логика + Outbox в единой транзакции)
         event = OrderPaidIntegrationEvent(
             order_id=order.id,
             customer_id=order.customer_id,
@@ -98,7 +100,9 @@ class OrderSagaOrchestrator:
             event_type="OrderPaid",
             payload=json.dumps(event.model_dump())
         )
-        self.outbox_db[outbox_msg.id] = outbox_msg
+        
+        # Атомарное сохранение изменения заказа и записи в outbox через репозиторий
+        self.order_repo.save_order_with_outbox(order, outbox_msg)
 
         return True, "Order placed, stock reserved, payment processed, outbox recorded"
 
