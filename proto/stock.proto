@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package smartdelivery.stock;
+
+service StockGrpcService {
+  rpc CheckAndReserveStock (StockReserveRequest) returns (StockReserveReply);
+  rpc ReleaseStock (StockReleaseRequest) returns (StockReleaseReply);
+}
+
+message StockReserveRequest {
+  string product_id = 1;
+  int32 quantity = 2;
+}
+
+message StockReserveReply {
+  bool success = 1;
+  string message = 2;
+}
+
+message StockReleaseRequest {
+  string product_id = 1;
+  int32 quantity = 2;
+}
+
+message StockReleaseReply {
+  bool success = 1;
+}

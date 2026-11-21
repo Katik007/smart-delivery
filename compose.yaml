@@ -1,144 +1,142 @@
 services:
-  gateway:
-    image: ${GATEWAY_IMAGE:-smartdelivery-gateway:latest}
+  postgres:
+    image: postgres:17-alpine
+    container_name: smartdelivery-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: smartdelivery
+      POSTGRES_PASSWORD: SmartDeliveryPostgres2026!
+      POSTGRES_DB: smartdelivery_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - smartdelivery-internal
+
+  redis:
+    image: redis:7-alpine
+    container_name: smartdelivery-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - smartdelivery-internal
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: smartdelivery-rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - smartdelivery-internal
+
+  auth-service:
     build:
       context: .
-      target: gateway
-    restart: unless-stopped
-    networks:
-      default:
-      proxy:
-        aliases:
-          - ${PROXY_APP_ALIAS:-kabanovae}
+      dockerfile: Dockerfile
+    command: uvicorn src.auth_service.main:app --host 0.0.0.0 --port 8001
+    container_name: smartdelivery-auth
+    restart: always
+    ports:
+      - "8001:8001"
     environment:
-      ReverseProxy__Clusters__auth-cluster__Destinations__destination1__Address: http://auth-service:8080
-      ReverseProxy__Clusters__catalog-cluster__Destinations__destination1__Address: http://catalog-service:8080
-      ReverseProxy__Clusters__order-cluster__Destinations__destination1__Address: http://order-service:8080
-      ReverseProxy__Clusters__delivery-cluster__Destinations__destination1__Address: http://delivery-service:8080
+      - PYTHONUNBUFFERED=1
+    networks:
+      - smartdelivery-internal
+
+  catalog-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn src.catalog_service.main:app --host 0.0.0.0 --port 8002
+    container_name: smartdelivery-catalog
+    restart: always
+    ports:
+      - "8002:8002"
+      - "50051:50051"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - REDIS_URL=redis://redis:6379/0
+      - GRPC_PORT=50051
+    depends_on:
+      - redis
+    networks:
+      - smartdelivery-internal
+
+  order-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn src.order_service.main:app --host 0.0.0.0 --port 8003
+    container_name: smartdelivery-order
+    restart: always
+    ports:
+      - "8003:8003"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CATALOG_GRPC_HOST=catalog-service:50051
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      - catalog-service
+      - rabbitmq
+    networks:
+      - smartdelivery-internal
+
+  delivery-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn src.delivery_service.main:app --host 0.0.0.0 --port 8004
+    container_name: smartdelivery-delivery
+    restart: always
+    ports:
+      - "8004:8004"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      - rabbitmq
+    networks:
+      - smartdelivery-internal
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn src.gateway.main:app --host 0.0.0.0 --port 8080
+    container_name: kabanovae
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - CATALOG_SERVICE_URL=http://catalog-service:8002
+      - ORDER_SERVICE_URL=http://order-service:8003
+      - DELIVERY_SERVICE_URL=http://delivery_service:8004
     depends_on:
       - auth-service
       - catalog-service
       - order-service
       - delivery-service
-
-  auth-service:
-    image: ${AUTH_IMAGE:-smartdelivery-auth:latest}
-    build:
-      context: .
-      target: auth
-    restart: unless-stopped
     networks:
-      - default
-    environment:
-      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=smartdelivery;Username=smartdelivery;Password=${POSTGRES_PASSWORD:-SmartDeliveryPostgresPassword2026!}"
-      Redis__ConnectionString: "redis:6379"
-      JwtSettings__Secret: "${JWT_SECRET:-SmartDeliverySecretKeySuperLongSecureKey2026!#$*&}"
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
-
-  catalog-service:
-    image: ${CATALOG_IMAGE:-smartdelivery-catalog:latest}
-    build:
-      context: .
-      target: catalog
-    restart: unless-stopped
-    networks:
-      - default
-    environment:
-      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=smartdelivery;Username=smartdelivery;Password=${POSTGRES_PASSWORD:-SmartDeliveryPostgresPassword2026!}"
-      Redis__ConnectionString: "redis:6379"
-      JwtSettings__Secret: "${JWT_SECRET:-SmartDeliverySecretKeySuperLongSecureKey2026!#$*&}"
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
-
-  order-service:
-    image: ${ORDER_IMAGE:-smartdelivery-order:latest}
-    build:
-      context: .
-      target: order
-    restart: unless-stopped
-    networks:
-      - default
-    environment:
-      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=smartdelivery;Username=smartdelivery;Password=${POSTGRES_PASSWORD:-SmartDeliveryPostgresPassword2026!}"
-      RabbitMq__Host: "rabbitmq"
-      RabbitMq__Port: "5672"
-      RabbitMq__Username: "guest"
-      RabbitMq__Password: "guest"
-      Services__CatalogService__Url: "http://catalog-service:8080"
-      JwtSettings__Secret: "${JWT_SECRET:-SmartDeliverySecretKeySuperLongSecureKey2026!#$*&}"
-    depends_on:
-      db:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_started
-      catalog-service:
-        condition: service_started
-
-  delivery-service:
-    image: ${DELIVERY_IMAGE:-smartdelivery-delivery:latest}
-    build:
-      context: .
-      target: delivery
-    restart: unless-stopped
-    networks:
-      - default
-    environment:
-      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=smartdelivery;Username=smartdelivery;Password=${POSTGRES_PASSWORD:-SmartDeliveryPostgresPassword2026!}"
-      RabbitMq__Host: "rabbitmq"
-      RabbitMq__Port: "5672"
-      RabbitMq__Username: "guest"
-      RabbitMq__Password: "guest"
-      JwtSettings__Secret: "${JWT_SECRET:-SmartDeliverySecretKeySuperLongSecureKey2026!#$*&}"
-    depends_on:
-      db:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_started
-
-  db:
-    image: postgres:17
-    restart: unless-stopped
-    networks:
-      - default
-    environment:
-      POSTGRES_DB: smartdelivery
-      POSTGRES_USER: smartdelivery
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-SmartDeliveryPostgresPassword2026!}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U smartdelivery -d smartdelivery"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    networks:
-      - default
-
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    restart: unless-stopped
-    networks:
-      - default
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
-
-volumes:
-  postgres-data:
+      - smartdelivery-internal
+      - nginx-proxy
 
 networks:
-  default:
-  proxy:
+  smartdelivery-internal:
+    driver: bridge
+  nginx-proxy:
     external: true
-    name: nginx-proxy
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:

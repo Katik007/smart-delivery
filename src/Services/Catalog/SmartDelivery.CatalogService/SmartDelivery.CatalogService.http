@@ -1,6 +1,0 @@
-@SmartDelivery.CatalogService_HostAddress = http://localhost:5034
-
-GET {{SmartDelivery.CatalogService_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
