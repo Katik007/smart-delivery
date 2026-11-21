@@ -1,8 +1,0 @@
-{
-  "SmartDelivery.ApiGateway, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\User\\Desktop\\web\\src\\ApiGateway\\SmartDelivery.ApiGateway",
-  "SmartDelivery.AuthService, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\User\\Desktop\\web\\src\\Services\\Auth\\SmartDelivery.AuthService",
-  "SmartDelivery.CatalogService, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\User\\Desktop\\web\\src\\Services\\Catalog\\SmartDelivery.CatalogService",
-  "SmartDelivery.DeliveryService, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\User\\Desktop\\web\\src\\Services\\Delivery\\SmartDelivery.DeliveryService",
-  "SmartDelivery.OrderService, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\User\\Desktop\\web\\src\\Services\\Order\\SmartDelivery.OrderService",
-  "SmartDelivery.Shared, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\User\\Desktop\\web\\src\\Common\\SmartDelivery.Shared"
-}
