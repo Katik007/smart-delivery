@@ -1,18 +1,13 @@
-# .NET and Visual Studio
-[Bb]in/
-[Oo]bj/
-[Ll]og/
-[Ll]ogs/
-.vs/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.log
 
 # Secrets and environment files
 .env
 .env.*
-.postgres-password
 *.key
 *.pem
 id_rsa
@@ -27,4 +22,3 @@ TestResults/
 # OS generated
 .DS_Store
 Thumbs.db
-*.bat
