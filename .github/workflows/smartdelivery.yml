@@ -81,3 +81,7 @@ jobs:
           base=https://kabanovae.9593647-gu32875.twc1.net
           curl -fsS --retry 5 "$base/health" | jq -e '.gateway == "SmartDelivery.ApiGateway"'
           curl -fsS --retry 5 "$base/api/catalog/products" | jq -e 'any(.[]; .id == "prod-101")'
+          for route in auth catalog orders delivery; do
+            curl -fsS --retry 5 "$base/api/$route/health" | jq -e '.status == "Healthy"'
+          done
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$base/api/auth/me")" = 401
