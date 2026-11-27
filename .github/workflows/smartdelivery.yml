@@ -26,6 +26,19 @@ jobs:
           docker compose up --detach --wait --wait-timeout 120
       - name: Verify full order flow
         run: python tests/integration/compose_smoke.py
+      - name: Export the tested application filesystem
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          container="$(docker create smartdelivery:local)"
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker export "$container" | gzip -1 > smartdelivery-rootfs.tar.gz
+      - uses: actions/upload-artifact@v4
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          name: smartdelivery-rootfs
+          path: smartdelivery-rootfs.tar.gz
+          retention-days: 1
+          compression-level: 0
       - name: Read container logs if a check failed
         if: failure()
         run: docker compose logs --tail 80
@@ -42,6 +55,9 @@ jobs:
       group: kabanovae-production
       cancel-in-progress: false
     steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: smartdelivery-rootfs
       - name: Deploy tested commit
         env:
           DEPLOY_KEY: ${{ secrets.SMARTDELIVERY_DEPLOY_KEY }}
@@ -57,7 +73,8 @@ jobs:
           ssh -i "$ssh_dir/key" -o IdentitiesOnly=yes -o BatchMode=yes \
             -o ConnectTimeout=15 -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$ssh_dir/known_hosts" \
-            root@136.234.238.30 "deploy $GITHUB_SHA"
+            -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+            root@136.234.238.30 "deploy $GITHUB_SHA" < smartdelivery-rootfs.tar.gz
       - name: Verify public endpoint
         run: |
           base=https://kabanovae.9593647-gu32875.twc1.net

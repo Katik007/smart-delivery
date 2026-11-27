@@ -11,7 +11,7 @@ if [[ ! ${SSH_ORIGINAL_COMMAND:-} =~ ^deploy\ ([a-f0-9]{40})$ ]]; then
 fi
 revision="${BASH_REMATCH[1]}"
 
-git -C repo fetch --depth 1 origin refs/heads/main
+git -C repo fetch --depth 1 origin refs/heads/main </dev/null
 if [[ "$(git -C repo rev-parse FETCH_HEAD)" != "$revision" ]]; then
     echo "The requested commit is no longer the tip of main." >&2
     exit 3
@@ -19,9 +19,9 @@ fi
 git -C repo checkout --detach "$revision"
 
 image="smartdelivery-kabanovae:$revision"
-docker build --tag "$image" repo
+docker image import --change "USER app" --change "WORKDIR /app" - "$image"
 
-compose=(docker compose -p smartdelivery-kabanovae -f compose.yaml -f compose.production.yaml)
+compose=(docker compose --parallel 2 -p smartdelivery-kabanovae -f compose.yaml -f compose.production.yaml)
 if SMARTDELIVERY_IMAGE="$image" "${compose[@]}" up --detach --wait --wait-timeout 150; then
     printf '%s\n' "$image" > deployed-image
     "${compose[@]}" ps
