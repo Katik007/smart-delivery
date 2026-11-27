@@ -2,9 +2,11 @@
 **/.vs
 **/bin
 **/obj
-**/.env
+**/.env*
 **/.postgres-password
 **/*.key
 **/*.md
 **/TestResults
 **/simple-project-main
+**/__pycache__
+tests

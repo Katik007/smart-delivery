@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, status, Depends
-from pydantic import BaseModel
-from typing import Dict, List, Optional
+from pydantic import BaseModel, Field
+from typing import List, Optional
 from datetime import datetime
 import os
 
@@ -8,14 +8,15 @@ from src.catalog_service.models import Product, Category, InventoryItem, Warehou
 from src.catalog_service.cache import CatalogCacheService
 from src.catalog_service.grpc_server import start_grpc_server
 from src.common.security import get_current_user, require_roles
+from src.common.storage import Storage
 
 app = FastAPI(title="SmartDelivery CatalogService API", version="1.0.0")
 
-# In-memory stores
-categories_db: Dict[str, Category] = {}
-products_db: Dict[str, Product] = {}
-warehouses_db: Dict[str, Warehouse] = {}
-inventory_db: Dict[str, InventoryItem] = {}  # key: product_id
+storage = Storage("catalog")
+categories_db = storage.collection("categories", Category)
+products_db = storage.collection("products", Product)
+warehouses_db = storage.collection("warehouses", Warehouse)
+inventory_db = storage.collection("inventory", InventoryItem)
 
 cache_service = CatalogCacheService()
 grpc_server_instance = None
@@ -38,18 +39,18 @@ def seed_data():
         inventory_db[p1.id] = InventoryItem(product_id=p1.id, warehouse_id=w.id, available_quantity=25)
         inventory_db[p2.id] = InventoryItem(product_id=p2.id, warehouse_id=w.id, available_quantity=40)
 
-seed_data()
+if not storage.dsn:
+    seed_data()
 
 
 @app.on_event("startup")
 def on_startup():
     global grpc_server_instance
-    # Start gRPC server in background
+    storage.initialize()
+    with storage.transaction(lock=True):
+        seed_data()
     grpc_port = int(os.getenv("GRPC_PORT", "50051"))
-    try:
-        grpc_server_instance = start_grpc_server(inventory_db, port=grpc_port)
-    except Exception as e:
-        print(f"Warning: could not bind gRPC port {grpc_port}: {e}")
+    grpc_server_instance = start_grpc_server(inventory_db, storage, port=grpc_port)
 
 
 @app.on_event("shutdown")
@@ -91,16 +92,16 @@ def get_product_by_id(product_id: str):
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    cache_service.set(cache_key, product.dict(), ttl_seconds=600)
+    cache_service.set(cache_key, product.model_dump(), ttl_seconds=600)
     return product
 
 
 class CreateProductRequest(BaseModel):
     name: str
     description: Optional[str] = None
-    price: float
+    price: float = Field(gt=0, allow_inf_nan=False)
     category_id: str
-    initial_quantity: int = 10
+    initial_quantity: int = Field(default=10, ge=0)
 
 
 @app.post("/api/catalog/products", response_model=Product, status_code=status.HTTP_201_CREATED)
@@ -111,16 +112,16 @@ def create_product(req: CreateProductRequest, user: dict = Depends(require_roles
         price=req.price,
         category_id=req.category_id
     )
-    products_db[product.id] = product
-
-    # Create inventory item
-    warehouse = list(warehouses_db.values())[0] if warehouses_db else None
-    wh_id = warehouse.id if warehouse else "WH-MAIN"
-    inventory_db[product.id] = InventoryItem(
-        product_id=product.id,
-        warehouse_id=wh_id,
-        available_quantity=req.initial_quantity
-    )
+    with storage.transaction(lock=True):
+        if req.category_id not in categories_db:
+            raise HTTPException(status_code=404, detail="Category not found")
+        warehouse = next(iter(warehouses_db.values()))
+        products_db[product.id] = product
+        inventory_db[product.id] = InventoryItem(
+            product_id=product.id,
+            warehouse_id=warehouse.id,
+            available_quantity=req.initial_quantity
+        )
 
     # Invalidate cache
     cache_service.invalidate(f"product:{product.id}")

@@ -1,46 +1,14 @@
 stages:
   - test
-  - deploy
 
-variables:
-  SERVER_IP: "136.234.238.30"
-  DEPLOY_DIR: "/home/kabanovae"
-
-# 1. Автоматический запуск тестов
 test-job:
   stage: test
   image: python:3.11-slim
   before_script:
-    - apt-get update && apt-get install -y --no-install-recommends gcc curl
-    - pip install --no-cache-dir -r requirements.txt
+    - pip install -r requirements.txt
   script:
-    - python -m grpc_tools.protoc -Iproto --python_out=src/common/grpc_stubs --grpc_python_out=src/common/grpc_stubs proto/stock.proto
-    - pytest --junitxml=test-report.xml
+    - python -m pytest tests/unit tests/integration --junitxml=test-report.xml
   artifacts:
     when: always
     reports:
       junit: test-report.xml
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-
-# 2. Автоматический деплой на сервер преподавателя
-deploy-job:
-  stage: deploy
-  image: alpine:latest
-  before_script:
-    - apk update && apk add --no-cache openssh-client bash rsync
-    - eval $(ssh-agent -s)
-    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
-    - mkdir -p ~/.ssh
-    - chmod 700 ~/.ssh
-    - ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
-  script:
-    - echo "=== Деплой в $DEPLOY_DIR на сервере $SERVER_IP ==="
-    - ssh root@$SERVER_IP "mkdir -p $DEPLOY_DIR"
-    - rsync -avz --exclude '.git' --exclude '__pycache__' ./ root@$SERVER_IP:$DEPLOY_DIR/
-    - ssh root@$SERVER_IP "cd $DEPLOY_DIR && docker network create nginx-proxy 2>/dev/null || true"
-    - ssh root@$SERVER_IP "cd $DEPLOY_DIR && docker compose down --remove-orphans || true"
-    - ssh root@$SERVER_IP "cd $DEPLOY_DIR && docker compose up -d --build"
-    - ssh root@$SERVER_IP "docker ps --filter 'name=kabanovae'"
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"

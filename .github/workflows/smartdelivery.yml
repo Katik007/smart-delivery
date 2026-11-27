@@ -1,0 +1,65 @@
+name: SmartDelivery CI/CD
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests/unit tests/integration -q
+      - name: Build and start Compose
+        run: |
+          docker build --tag smartdelivery:local .
+          docker compose up --detach --wait --wait-timeout 120
+      - name: Verify full order flow
+        run: python tests/integration/compose_smoke.py
+      - name: Read container logs if a check failed
+        if: failure()
+        run: docker compose logs --tail 80
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment:
+      name: production
+      url: https://kabanovae.9593647-gu32875.twc1.net
+    concurrency:
+      group: kabanovae-production
+      cancel-in-progress: false
+    steps:
+      - name: Deploy tested commit
+        env:
+          DEPLOY_KEY: ${{ secrets.SMARTDELIVERY_DEPLOY_KEY }}
+          SSH_HOST_KEY: ${{ vars.SMARTDELIVERY_SSH_HOST_KEY }}
+        run: |
+          umask 077
+          : "${DEPLOY_KEY:?Missing deploy key}"
+          : "${SSH_HOST_KEY:?Missing host key}"
+          ssh_dir="$(mktemp -d)"
+          trap 'rm -rf "$ssh_dir"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$ssh_dir/key"
+          printf '%s\n' "$SSH_HOST_KEY" > "$ssh_dir/known_hosts"
+          ssh -i "$ssh_dir/key" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o ConnectTimeout=15 -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            root@136.234.238.30 "deploy $GITHUB_SHA"
+      - name: Verify public endpoint
+        run: |
+          base=https://kabanovae.9593647-gu32875.twc1.net
+          curl -fsS --retry 5 "$base/health" | jq -e '.gateway == "SmartDelivery.ApiGateway"'
+          curl -fsS --retry 5 "$base/api/catalog/products" | jq -e 'any(.[]; .id == "prod-101")'

@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, JSONResponse
 import httpx
 import os
 from datetime import datetime
@@ -47,33 +46,40 @@ async def proxy_request(target_base: str, path: str, request: Request) -> Respon
             headers=headers,
             content=content
         )
-        return Response(content=resp.content, status_code=resp.status_code, headers=dict(resp.headers))
-    except Exception as e:
-        return Response(
-            content=f'{{"error": "Microservice unavailable", "target": "{target_base}", "details": "{str(e)}"}}',
-            status_code=503,
-            media_type="application/json"
-        )
+        response_headers = {
+            name: value for name, value in resp.headers.items()
+            if name not in ("connection", "content-encoding", "content-length", "transfer-encoding")
+        }
+        return Response(content=resp.content, status_code=resp.status_code, headers=response_headers)
+    except httpx.HTTPError:
+        return JSONResponse({"error": "Microservice unavailable"}, status_code=503)
 
 
 @app.api_route("/api/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_auth(path: str, request: Request):
-    return await proxy_request(AUTH_URL, f"/api/auth/{path}", request)
+    return await proxy_request(AUTH_URL, "/health" if path == "health" else f"/api/auth/{path}", request)
 
 
 @app.api_route("/api/catalog/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_catalog(path: str, request: Request):
-    return await proxy_request(CATALOG_URL, f"/api/catalog/{path}", request)
+    return await proxy_request(CATALOG_URL, "/health" if path == "health" else f"/api/catalog/{path}", request)
+
+
+@app.api_route("/api/orders", methods=["GET", "POST"])
+async def route_orders_base(request: Request):
+    return await proxy_request(ORDER_URL, "/api/orders", request)
 
 
 @app.api_route("/api/orders/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_orders(path: str, request: Request):
-    return await proxy_request(ORDER_URL, f"/api/orders/{path}", request)
+    if not path:
+        return await route_orders_base(request)
+    return await proxy_request(ORDER_URL, "/health" if path == "health" else f"/api/orders/{path}", request)
 
 
 @app.api_route("/api/delivery/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_delivery(path: str, request: Request):
-    return await proxy_request(DELIVERY_URL, f"/api/delivery/{path}", request)
+    return await proxy_request(DELIVERY_URL, "/health" if path == "health" else f"/api/delivery/{path}", request)
 
 
 # Static dashboard

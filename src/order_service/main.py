@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, status, Depends
-from pydantic import BaseModel
-from typing import Dict, List, Optional
+from pydantic import BaseModel, Field
+from typing import List
 from datetime import datetime
 import os
 
@@ -9,22 +9,26 @@ from src.order_service.saga import OrderSagaOrchestrator
 from src.order_service.outbox_worker import OutboxPublisherWorker
 from src.common.domain import OrderStatus
 from src.common.security import get_current_user
+from src.common.storage import Storage
 
 app = FastAPI(title="SmartDelivery OrderService API", version="1.0.0")
 
-# In-memory stores
-orders_db: Dict[str, Order] = {}
-payments_db: Dict[str, Payment] = {}
-saga_db: Dict[str, OrderSagaState] = {}
-outbox_db: Dict[str, OutboxMessage] = {}
+storage = Storage("orders")
+orders_db = storage.collection("orders", Order)
+payments_db = storage.collection("payments", Payment)
+saga_db = storage.collection("saga_states", OrderSagaState)
+outbox_db = storage.collection("outbox_messages", OutboxMessage)
 
 grpc_host = os.getenv("CATALOG_GRPC_HOST", "localhost:50051")
-saga_orchestrator = OrderSagaOrchestrator(orders_db, payments_db, saga_db, outbox_db, grpc_target=grpc_host)
+saga_orchestrator = OrderSagaOrchestrator(
+    orders_db, payments_db, saga_db, outbox_db, grpc_target=grpc_host, allow_offline=not storage.dsn
+)
 outbox_worker = OutboxPublisherWorker(outbox_db)
 
 
 @app.on_event("startup")
 def on_startup():
+    storage.initialize()
     outbox_worker.start()
 
 
@@ -46,13 +50,13 @@ def health_check():
 class OrderItemInput(BaseModel):
     product_id: str
     product_name: str
-    quantity: int
-    unit_price: float
+    quantity: int = Field(gt=0, le=2147483647)
+    unit_price: float = Field(gt=0, allow_inf_nan=False)
 
 
 class CreateOrderRequest(BaseModel):
     delivery_address: str
-    items: List[OrderItemInput]
+    items: List[OrderItemInput] = Field(min_length=1)
     payment_card: str = "4111222233334444"  # Use '0000' to simulate payment failure & compensation
 
 
@@ -75,11 +79,9 @@ def create_order(req: CreateOrderRequest, user: dict = Depends(get_current_user)
             unit_price=item.unit_price
         ))
 
-    orders_db[order.id] = order
-
-    # Execute Saga
     card_valid = (req.payment_card != "0000")
-    success, message = saga_orchestrator.execute_saga(order, payment_card_valid=card_valid)
+    with storage.transaction():
+        success, message = saga_orchestrator.execute_saga(order, payment_card_valid=card_valid)
 
     if not success:
         raise HTTPException(
@@ -103,13 +105,14 @@ def list_orders(user: dict = Depends(get_current_user)):
 @app.get("/api/orders/{order_id}", response_model=Order)
 def get_order(order_id: str, user: dict = Depends(get_current_user)):
     order = orders_db.get(order_id)
-    if not order:
+    if not order or (order.customer_id != user["sub"] and user.get("role") not in ("Manager", "Admin")):
         raise HTTPException(status_code=404, detail="Order not found")
     return order
 
 
 @app.get("/api/orders/saga/{order_id}")
-def get_saga_status(order_id: str):
+def get_saga_status(order_id: str, user: dict = Depends(get_current_user)):
+    get_order(order_id, user)
     saga = next((s for s in saga_db.values() if s.order_id == order_id), None)
     if not saga:
         raise HTTPException(status_code=404, detail="Saga state not found")

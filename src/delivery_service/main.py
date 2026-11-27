@@ -1,33 +1,40 @@
 from fastapi import FastAPI, HTTPException, status, Depends
 from pydantic import BaseModel
-from typing import Dict, List, Optional
+from typing import List
 from datetime import datetime
-import os
 
 from src.delivery_service.models import DeliveryTask, Courier, DeliveryRoute, InboxMessage
 from src.delivery_service.consumer import OrderPaidConsumerWorker
 from src.common.domain import DeliveryStatus, CourierStatus
 from src.common.security import get_current_user, require_roles
+from src.common.storage import Storage
 
 app = FastAPI(title="SmartDelivery DeliveryService API", version="1.0.0")
 
-# In-memory stores
-tasks_db: Dict[str, DeliveryTask] = {}
-couriers_db: Dict[str, Courier] = {}
-routes_db: Dict[str, DeliveryRoute] = {}
-inbox_db: Dict[str, InboxMessage] = {}
+storage = Storage("delivery")
+tasks_db = storage.collection("tasks", DeliveryTask)
+couriers_db = storage.collection("couriers", Courier)
+routes_db = storage.collection("routes", DeliveryRoute)
+inbox_db = storage.collection("inbox_messages", InboxMessage)
 
-# Seed default couriers immediately
-c1 = Courier(name="Иван Кузнецов", phone="+79991112233", vehicle_type="Scooter", status=CourierStatus.AVAILABLE)
-c2 = Courier(name="Алексей Смирнов", phone="+79994445566", vehicle_type="Bicycle", status=CourierStatus.AVAILABLE)
-couriers_db[c1.id] = c1
-couriers_db[c2.id] = c2
+def seed_couriers():
+    if not couriers_db:
+        c1 = Courier(name="Иван Кузнецов", phone="+79991112233", vehicle_type="Scooter")
+        c2 = Courier(name="Алексей Смирнов", phone="+79994445566", vehicle_type="Bicycle")
+        couriers_db[c1.id] = c1
+        couriers_db[c2.id] = c2
 
-consumer_worker = OrderPaidConsumerWorker(tasks_db, couriers_db, inbox_db)
+if not storage.dsn:
+    seed_couriers()
+
+consumer_worker = OrderPaidConsumerWorker(tasks_db, couriers_db, inbox_db, storage=storage)
 
 
 @app.on_event("startup")
 def on_startup():
+    storage.initialize()
+    with storage.transaction(lock=True):
+        seed_couriers()
     consumer_worker.start()
 
 
@@ -49,11 +56,14 @@ def health_check():
 
 @app.get("/api/delivery/tasks", response_model=List[DeliveryTask])
 def get_delivery_tasks(user: dict = Depends(get_current_user)):
-    return list(tasks_db.values())
+    tasks = list(tasks_db.values())
+    if user["role"] in ("Courier", "Manager", "Admin"):
+        return tasks
+    return [task for task in tasks if task.customer_id == user["sub"]]
 
 
 @app.get("/api/delivery/couriers", response_model=List[Courier])
-def get_couriers(user: dict = Depends(get_current_user)):
+def get_couriers(user: dict = Depends(require_roles(["Courier", "Manager", "Admin"]))):
     return list(couriers_db.values())
 
 
@@ -82,14 +92,16 @@ class UpdateTaskStatusRequest(BaseModel):
 
 @app.put("/api/delivery/tasks/{task_id}/status", response_model=DeliveryTask)
 def update_task_status(task_id: str, req: UpdateTaskStatusRequest, user: dict = Depends(require_roles(["Courier", "Manager", "Admin"]))):
-    task = tasks_db.get(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Delivery task not found")
-
-    task.status = req.status
-    if req.status == DeliveryStatus.DELIVERED:
-        task.completed_at = datetime.utcnow()
-        if task.courier_id and task.courier_id in couriers_db:
-            couriers_db[task.courier_id].status = CourierStatus.AVAILABLE
-
-    return task
+    with storage.transaction(lock=True):
+        task = tasks_db.get(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Delivery task not found")
+        if req.status == DeliveryStatus.DELIVERED and task.status != DeliveryStatus.DELIVERED:
+            task.completed_at = datetime.utcnow()
+            courier = couriers_db.get(task.courier_id) if task.courier_id else None
+            if courier:
+                courier.status = CourierStatus.AVAILABLE
+                couriers_db[courier.id] = courier
+        task.status = req.status
+        tasks_db[task.id] = task
+        return task

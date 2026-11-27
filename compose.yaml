@@ -1,142 +1,164 @@
+x-app-variables: &app-variables
+  PYTHONUNBUFFERED: "1"
+  JWT_SECRET: ${JWT_SECRET:-local-compose-secret-not-for-production-2026}
+  DATABASE_URL: postgresql://smartdelivery:${POSTGRES_PASSWORD:-smartdelivery-local}@postgres:5432/smartdelivery
+
+x-app: &app
+  image: ${SMARTDELIVERY_IMAGE:-smartdelivery:local}
+  pull_policy: never
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  networks:
+    - backend
+
 services:
   postgres:
     image: postgres:17-alpine
-    container_name: smartdelivery-postgres
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: smartdelivery
-      POSTGRES_PASSWORD: SmartDeliveryPostgres2026!
-      POSTGRES_DB: smartdelivery_db
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smartdelivery-local}
+      POSTGRES_DB: smartdelivery
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "smartdelivery", "-d", "smartdelivery"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
     networks:
-      - smartdelivery-internal
+      - backend
 
   redis:
     image: redis:7-alpine
-    container_name: smartdelivery-redis
-    restart: always
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
     networks:
-      - smartdelivery-internal
+      - backend
 
   rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    container_name: smartdelivery-rabbitmq
-    restart: always
-    ports:
-      - "5672:5672"
-      - "15672:15672"
+    image: rabbitmq:3.13-alpine
+    restart: unless-stopped
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: smartdelivery
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-smartdelivery-local}
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+S 2:2"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
     networks:
-      - smartdelivery-internal
+      - backend
 
   auth-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: *app
     command: uvicorn src.auth_service.main:app --host 0.0.0.0 --port 8001
-    container_name: smartdelivery-auth
-    restart: always
-    ports:
-      - "8001:8001"
-    environment:
-      - PYTHONUNBUFFERED=1
-    networks:
-      - smartdelivery-internal
+    environment: *app-variables
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   catalog-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: *app
     command: uvicorn src.catalog_service.main:app --host 0.0.0.0 --port 8002
-    container_name: smartdelivery-catalog
-    restart: always
-    ports:
-      - "8002:8002"
-      - "50051:50051"
     environment:
-      - PYTHONUNBUFFERED=1
-      - REDIS_URL=redis://redis:6379/0
-      - GRPC_PORT=50051
+      <<: *app-variables
+      REDIS_URL: redis://redis:6379/0
+      GRPC_PORT: 50051
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
     depends_on:
-      - redis
-    networks:
-      - smartdelivery-internal
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   order-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: *app
     command: uvicorn src.order_service.main:app --host 0.0.0.0 --port 8003
-    container_name: smartdelivery-order
-    restart: always
-    ports:
-      - "8003:8003"
     environment:
-      - PYTHONUNBUFFERED=1
-      - CATALOG_GRPC_HOST=catalog-service:50051
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      <<: *app-variables
+      CATALOG_GRPC_HOST: catalog-service:50051
+      RABBITMQ_URL: amqp://smartdelivery:${RABBITMQ_PASSWORD:-smartdelivery-local}@rabbitmq:5672/%2F
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
     depends_on:
-      - catalog-service
-      - rabbitmq
-    networks:
-      - smartdelivery-internal
+      catalog-service:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   delivery-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: *app
     command: uvicorn src.delivery_service.main:app --host 0.0.0.0 --port 8004
-    container_name: smartdelivery-delivery
-    restart: always
-    ports:
-      - "8004:8004"
     environment:
-      - PYTHONUNBUFFERED=1
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      <<: *app-variables
+      RABBITMQ_URL: amqp://smartdelivery:${RABBITMQ_PASSWORD:-smartdelivery-local}@rabbitmq:5672/%2F
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8004/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
     depends_on:
-      - rabbitmq
-    networks:
-      - smartdelivery-internal
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   gateway:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: uvicorn src.gateway.main:app --host 0.0.0.0 --port 8080
-    container_name: kabanovae
-    restart: always
-    ports:
-      - "8080:8080"
-    environment:
-      - PYTHONUNBUFFERED=1
-      - AUTH_SERVICE_URL=http://auth-service:8001
-      - CATALOG_SERVICE_URL=http://catalog-service:8002
-      - ORDER_SERVICE_URL=http://order-service:8003
-      - DELIVERY_SERVICE_URL=http://delivery_service:8004
-    depends_on:
-      - auth-service
-      - catalog-service
-      - order-service
-      - delivery-service
+    <<: *app
     networks:
-      - smartdelivery-internal
-      - nginx-proxy
+      - backend
+      - edge
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8001
+      CATALOG_SERVICE_URL: http://catalog-service:8002
+      ORDER_SERVICE_URL: http://order-service:8003
+      DELIVERY_SERVICE_URL: http://delivery-service:8004
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      catalog-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      delivery-service:
+        condition: service_healthy
 
 networks:
-  smartdelivery-internal:
-    driver: bridge
-  nginx-proxy:
-    external: true
+  backend:
+    internal: true
+  edge:
 
 volumes:
   postgres_data:
-  redis_data:
   rabbitmq_data:

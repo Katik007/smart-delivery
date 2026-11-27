@@ -30,6 +30,7 @@ class DeliveryRoute(BaseModel):
 class DeliveryTask(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     order_id: str
+    customer_id: Optional[str] = None
     courier_id: Optional[str] = None
     delivery_address: str
     status: DeliveryStatus = DeliveryStatus.PENDING

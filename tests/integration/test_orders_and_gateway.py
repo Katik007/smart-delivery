@@ -35,7 +35,7 @@ def test_order_creation_and_saga_api():
     order_id = data["order_id"]
 
     # Check saga status endpoint
-    saga_resp = order_client.get(f"/api/orders/saga/{order_id}")
+    saga_resp = order_client.get(f"/api/orders/saga/{order_id}", headers={"Authorization": f"Bearer {cust_token}"})
     assert saga_resp.status_code == 200
     assert saga_resp.json()["current_step"] == "Paid"
 

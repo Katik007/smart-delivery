@@ -1,0 +1,12 @@
+services:
+  gateway:
+    ports: !reset []
+    networks: !override
+      backend:
+      nginx-proxy:
+        aliases:
+          - kabanovae-smartdelivery
+
+networks:
+  nginx-proxy:
+    external: true

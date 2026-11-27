@@ -1,30 +1,41 @@
 from fastapi import FastAPI, HTTPException, status, Depends
-from pydantic import BaseModel, EmailStr
-from typing import Dict, Optional, List
+from pydantic import BaseModel, EmailStr, field_validator
 from datetime import datetime, timedelta
-import uuid
 
 from src.auth_service.models import User, RefreshTokenRecord, UserAuditLog
 from src.common.domain import UserRole
 from src.common.security import (
     hash_password, verify_password,
     create_access_token, create_refresh_token,
-    decode_token, get_current_user
+    get_current_user
 )
+from src.common.storage import Storage
 
 app = FastAPI(title="SmartDelivery AuthService API", version="1.0.0")
 
-# In-memory storage (DDD Repository Simulation)
-users_db: Dict[str, User] = {}
-refresh_tokens_db: Dict[str, RefreshTokenRecord] = {}
-audit_logs_db: List[UserAuditLog] = []
+storage = Storage("identity")
+users_db = storage.collection("users", User)
+refresh_tokens_db = storage.collection("refresh_tokens", RefreshTokenRecord)
+audit_logs_db = storage.collection("audit_logs", UserAuditLog)
+
+
+@app.on_event("startup")
+def on_startup():
+    storage.initialize()
 
 
 class RegisterRequest(BaseModel):
     username: str
-    email: str
+    email: EmailStr
     password: str
     role: UserRole = UserRole.CUSTOMER
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value):
+        if not value or len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must contain between 1 and 72 bytes")
+        return value
 
 
 class LoginRequest(BaseModel):
@@ -52,45 +63,18 @@ def health_check():
 
 @app.post("/api/auth/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 def register(req: RegisterRequest):
-    # Check if username or email already exists
-    for u in users_db.values():
-        if u.username == req.username:
-            raise HTTPException(status_code=400, detail="Username already registered")
-        if u.email == req.email:
-            raise HTTPException(status_code=400, detail="Email already registered")
+    if req.role != UserRole.CUSTOMER:
+        raise HTTPException(status_code=403, detail="Public registration is available for customers only")
+    with storage.transaction(lock=True):
+        for user in users_db.values():
+            if user.username == req.username:
+                raise HTTPException(status_code=400, detail="Username already registered")
+            if user.email == req.email:
+                raise HTTPException(status_code=400, detail="Email already registered")
 
-    user = User(
-        username=req.username,
-        email=req.email,
-        password_hash=hash_password(req.password),
-        role=req.role
-    )
-    users_db[user.id] = user
-
-    # Create audit log
-    audit_logs_db.append(UserAuditLog(
-        user_id=user.id,
-        action="REGISTER",
-        ip_address="127.0.0.1"
-    ))
-
-    # Issue tokens
-    access_token = create_access_token(user.id, user.username, user.role.value)
-    refresh_token = create_refresh_token(user.id)
-
-    refresh_tokens_db[refresh_token] = RefreshTokenRecord(
-        token=refresh_token,
-        user_id=user.id,
-        expires_at=datetime.utcnow() + timedelta(days=7)
-    )
-
-    return AuthResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        user_id=user.id,
-        username=user.username,
-        role=user.role.value
-    )
+        user = User(username=req.username, email=req.email, password_hash=hash_password(req.password))
+        users_db[user.id] = user
+        return issue_session(user, "REGISTER")
 
 
 @app.post("/api/auth/login", response_model=AuthResponse)
@@ -104,6 +88,11 @@ def login(req: LoginRequest):
     if not user or not verify_password(req.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
+    with storage.transaction():
+        return issue_session(user, "LOGIN_SUCCESS")
+
+
+def issue_session(user: User, action: str) -> AuthResponse:
     access_token = create_access_token(user.id, user.username, user.role.value)
     refresh_token = create_refresh_token(user.id)
 
@@ -113,11 +102,8 @@ def login(req: LoginRequest):
         expires_at=datetime.utcnow() + timedelta(days=7)
     )
 
-    audit_logs_db.append(UserAuditLog(
-        user_id=user.id,
-        action="LOGIN_SUCCESS",
-        ip_address="127.0.0.1"
-    ))
+    audit_log = UserAuditLog(user_id=user.id, action=action, ip_address="127.0.0.1")
+    audit_logs_db[audit_log.id] = audit_log
 
     return AuthResponse(
         access_token=access_token,

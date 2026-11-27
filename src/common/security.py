@@ -1,11 +1,14 @@
 import jwt
 import bcrypt
+import os
+import uuid
+from secrets import token_urlsafe
 from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import HTTPException, Security, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-JWT_SECRET = "SmartDeliverySecretKey2026SuperSecureKeyForJwtTokenGenerationAndValidation"
+JWT_SECRET = os.getenv("JWT_SECRET") or token_urlsafe(48)
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 REFRESH_TOKEN_EXPIRE_DAYS = 7
@@ -42,6 +45,7 @@ def create_refresh_token(user_id: str) -> str:
     payload = {
         "sub": user_id,
         "type": "refresh",
+        "jti": str(uuid.uuid4()),
         "exp": expire
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -60,7 +64,10 @@ def decode_token(token: str) -> dict:
 def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Security(security_bearer)) -> dict:
     if not credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
-    return decode_token(credentials.credentials)
+    user = decode_token(credentials.credentials)
+    if user.get("type") == "refresh" or not user.get("role"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Access token required")
+    return user
 
 
 def require_roles(allowed_roles: List[str]):

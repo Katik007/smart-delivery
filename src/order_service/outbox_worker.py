@@ -1,8 +1,9 @@
 import time
 import os
 import threading
-import json
+import logging
 import pika
+from src.common.messaging import EXCHANGE, ORDER_PAID_KEY, declare_order_paid_queue
 
 
 class OutboxPublisherWorker:
@@ -22,7 +23,10 @@ class OutboxPublisherWorker:
 
     def _run_loop(self):
         while self._running:
-            self.publish_pending_messages()
+            try:
+                self.publish_pending_messages()
+            except Exception:
+                logging.getLogger(__name__).exception("Outbox publication failed; will retry")
             time.sleep(5)
 
     def publish_pending_messages(self):
@@ -30,22 +34,21 @@ class OutboxPublisherWorker:
         if not pending:
             return
 
-        try:
-            params = pika.URLParameters(self.rabbitmq_url)
-            connection = pika.BlockingConnection(params)
+        params = pika.URLParameters(self.rabbitmq_url)
+        params.blocked_connection_timeout = 5
+        with pika.BlockingConnection(params) as connection:
             channel = connection.channel()
-            channel.exchange_declare(exchange="smartdelivery.exchange", exchange_type="topic", durable=True)
+            declare_order_paid_queue(channel)
+            channel.confirm_delivery()
 
             for msg in pending:
                 channel.basic_publish(
-                    exchange="smartdelivery.exchange",
-                    routing_key="order.paid",
+                    exchange=EXCHANGE,
+                    routing_key=ORDER_PAID_KEY,
                     body=msg.payload,
-                    properties=pika.BasicProperties(delivery_mode=2)
+                    properties=pika.BasicProperties(delivery_mode=2, message_id=msg.id),
+                    mandatory=True
                 )
                 msg.status = "PUBLISHED"
 
-            connection.close()
-        except Exception:
-            # If RabbitMQ is temporarily unreachable, messages remain PENDING (guaranteed delivery)
-            pass
+                self.outbox_db[msg.id] = msg

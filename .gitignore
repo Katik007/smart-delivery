@@ -18,6 +18,8 @@ TestResults/
 *.trx
 *.xml
 *.coverage
+[Bb]in/
+[Oo]bj/
 
 # OS generated
 .DS_Store
